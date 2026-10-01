@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TaxFlow — Bank Statement Assistant</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --ink:#1c1d1f; --muted:#6b6f76; --border:#e4e2dd; --bg:#f2efe9; --panel:#fff;
+    --sidebar:#17181a; --sidebar-ink:#e9e6df; --sidebar-muted:#979490;
+    --gold:#c9a227; --gold-ink:#1c1d1f; --gold-soft:rgba(201,162,39,0.14);
+    --ok:#1f8a4c; --ok-soft:rgba(31,138,76,0.12);
+    --warn:#b4790c; --warn-soft:rgba(180,121,12,0.14);
+    --danger:#b3261e; --danger-soft:rgba(179,38,30,0.1);
+    --shadow:0 1px 2px rgba(0,0,0,0.05), 0 6px 20px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; line-height:1.5; }
+  .topbar { background:var(--sidebar); color:var(--sidebar-ink); padding:14px 22px; display:flex; align-items:center; justify-content:space-between; }
+  .brand .name { color:var(--gold); font-weight:800; font-size:20px; }
+  .brand .tag { color:var(--sidebar-muted); font-size:11.5px; }
+  .gear { background:transparent; border:1px solid var(--sidebar-muted); color:var(--sidebar-ink); border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer; }
+  .wrap { max-width:920px; margin:0 auto; padding:26px 16px 64px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:22px; box-shadow:var(--shadow); margin-bottom:18px; }
+  .card h2 { font-size:16px; margin:0 0 4px; display:flex; align-items:center; gap:9px; }
+  .card .card-sub { color:var(--muted); font-size:13px; margin:0 0 16px; }
+  .step-num { display:inline-flex; align-items:center; justify-content:center; width:23px; height:23px; border-radius:50%; background:var(--gold); color:var(--gold-ink); font-size:12px; font-weight:800; flex:none; }
+  .checklist label { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); cursor:pointer; font-size:14px; }
+  .checklist label:last-child { border-bottom:none; }
+  .checklist input { margin-top:3px; width:17px; height:17px; accent-color:var(--gold); flex:none; }
+  .hint { color:var(--muted); font-size:12.5px; margin-top:10px; }
+  button { font:inherit; border:none; border-radius:9px; padding:11px 18px; font-weight:700; cursor:pointer; }
+  button.primary { background:var(--gold); color:var(--gold-ink); }
+  button.primary:disabled { opacity:.4; cursor:not-allowed; }
+  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--border); }
+  button.small { padding:6px 11px; font-size:12.5px; border-radius:7px; }
+  .dropzone { border:2px dashed var(--border); border-radius:10px; padding:40px 16px; text-align:center; color:var(--muted); cursor:pointer; }
+  .dropzone.drag { border-color:var(--gold); background:var(--gold-soft); }
+  .dropzone strong { color:var(--ink); display:block; margin-bottom:4px; font-size:15px; }
+  #fileInput { display:none; }
+  .browse-btn { margin-top:14px; }
+  .timeline { margin-top:4px; }
+  .tl-item { display:flex; align-items:center; gap:12px; padding:9px 0; }
+  .tl-dot { width:22px; height:22px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; }
+  .tl-dot.done { background:var(--ok); color:#fff; }
+  .tl-dot.active { background:var(--gold); color:var(--gold-ink); }
+  .tl-dot.pending { background:var(--border); color:var(--muted); }
+  .tl-label.done { color:var(--ok); font-weight:600; }
+  .tl-label.active { color:var(--ink); font-weight:700; }
+  .tl-label.pending { color:var(--muted); }
+  .tl-sub { font-size:12.5px; color:var(--muted); margin-left:34px; margin-top:-4px; }
+  .tablewrap { overflow-x:auto; border:1px solid var(--border); border-radius:10px; }
+  table { border-collapse:collapse; width:100%; min-width:820px; font-size:13px; }
+  th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  th { background:var(--gold-soft); font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); }
+  tr:last-child td { border-bottom:none; }
+  input[type="text"], input[type="number"], input[type="password"], select {
+    font:inherit; font-size:13px; padding:6px 7px; border-radius:7px; border:1px solid var(--border);
+    background:var(--bg); color:var(--ink); width:100%; min-width:90px;
+  }
+  select { min-width:190px; }
+  .amt-debit { color:var(--danger); font-weight:600; }
+  .amt-credit { color:var(--ok); font-weight:600; }
+  .pill { display:inline-block; padding:3px 9px; border-radius:999px; font-size:11.5px; font-weight:700; }
+  .pill.hi { background:var(--ok-soft); color:var(--ok); }
+  .pill.mid { background:var(--warn-soft); color:var(--warn); }
+  .pill.lo { background:var(--danger-soft); color:var(--danger); }
+  .row-actions { display:flex; gap:6px; }
+  .footer-actions { display:flex; gap:10px; align-items:center; margin-top:16px; flex-wrap:wrap; }
+  .pillnote { font-size:12.5px; color:var(--muted); }
+  .error { background:var(--danger-soft); border:1px solid rgba(179,38,30,0.3); color:var(--danger); padding:10px 12px; border-radius:10px; font-size:13px; margin-top:12px; }
+  .disabled-note { opacity:.5; pointer-events:none; }
+  .proto-note { font-size:12px; color:var(--muted); text-align:center; margin-top:30px; }
+  .export-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:640px) { .export-grid { grid-template-columns:1fr; } }
+  .summary-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border); font-size:13.5px; }
+  .summary-row:last-child { border-bottom:none; }
+  .summary-row span:first-child { color:var(--muted); }
+  .opt-row { display:flex; align-items:center; gap:9px; padding:6px 0; font-size:13.5px; }
+  .opt-row input { width:16px; height:16px; accent-color:var(--gold); }
+  .format-box { border:1px solid var(--gold); background:var(--gold-soft); border-radius:9px; padding:10px 12px; font-size:13.5px; font-weight:600; margin-bottom:12px; }
+
+  .modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); align-items:center; justify-content:center; padding:16px; z-index:50; }
+  .modal-backdrop.open { display:flex; }
+  .modal { background:var(--panel); border-radius:12px; padding:22px; max-width:440px; width:100%; box-shadow:var(--shadow); }
+  .modal h3 { margin:0 0 6px; font-size:16px; }
+  .modal p { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  .modal .row { display:flex; gap:8px; margin-top:14px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <span class="name">TaxFlow</span><br/>
+    <span class="tag">Document &amp; Transaction Processing</span>
+  </div>
+  <button class="gear" id="settingsBtn">⚙ Settings</button>
+</div>
+
+<div class="wrap">
+
+  <div class="card" id="step1">
+    <h2><span class="step-num">1</span> Confirm client details are removed</h2>
+    <p class="card-sub">Complete this before uploading any statement.</p>
+    <div class="checklist">
+      <label><input type="checkbox" class="gate" data-k="name"> I have covered/removed the <strong>Account Name</strong></label>
+      <label><input type="checkbox" class="gate" data-k="custid"> I have covered/removed the <strong>Customer ID</strong></label>
+      <label><input type="checkbox" class="gate" data-k="bsb"> I have covered/removed the <strong>BSB</strong></label>
+      <label><input type="checkbox" class="gate" data-k="acct"> I have covered/removed the <strong>Account Number</strong></label>
+    </div>
+    <div class="hint">Transaction dates, descriptions and amounts can stay visible — they're needed for categorisation.</div>
+    <div class="footer-actions">
+      <button class="primary" id="continueBtn" disabled>Continue to upload</button>
+    </div>
+  </div>
+
+  <div class="card disabled-note" id="step2">
+    <h2><span class="step-num">2</span> Upload Documents</h2>
+    <p class="card-sub">Upload a redacted bank statement — PDF or a single photo/screenshot.</p>
+    <div class="dropzone" id="dropzone">
+      <strong>Drag and drop files here</strong>
+      or
+      <div><button class="primary browse-btn" id="browseBtn" type="button">Browse files</button></div>
+      <input type="file" id="fileInput" accept="application/pdf,image/png,image/jpeg,image/webp" />
+      <div class="hint">Supported: PDF, JPG, PNG · one statement per upload in this prototype</div>
+    </div>
+    <div id="timelineBox" style="display:none; margin-top:18px;"><div class="timeline" id="timeline"></div></div>
+    <div id="errorBox"></div>
+  </div>
+
+  <div class="card" id="step3" style="display:none;">
+    <h2><span class="step-num">3</span> Review Queue</h2>
+    <p class="card-sub">Review AI-extracted transactions before they're added to the export.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Type</th><th>Category</th><th>Confidence</th><th></th></tr></thead>
+        <tbody id="rowsBody"></tbody>
+      </table>
+    </div>
+    <div class="footer-actions">
+      <button class="ghost small" id="addRowBtn">+ Add row</button>
+      <span class="pillnote" id="countPill"></span>
+    </div>
+  </div>
+
+  <div class="card" id="step4" style="display:none;">
+    <h2><span class="step-num">4</span> Export Client Data</h2>
+    <p class="card-sub">Generate an Excel workbook using the Tax Clinic's accounting template.</p>
+    <div class="export-grid">
+      <div>
+        <div class="summary-row"><span>Transactions</span><span id="sumTotal">0</span></div>
+        <div class="summary-row"><span>Confirmed</span><span id="sumConfirmed">0</span></div>
+        <div class="summary-row"><span>Uncategorised</span><span id="sumUncat">0</span></div>
+      </div>
+      <div>
+        <div class="format-box">📊 Excel (.xlsx) — Business Income &amp; Expenses Template</div>
+        <label class="opt-row"><input type="checkbox" id="optGst" checked> Include GST calculations</label>
+        <label class="opt-row"><input type="checkbox" id="optStatus" checked> Include transaction review status</label>
+      </div>
+    </div>
+    <div class="footer-actions">
+      <button class="primary" id="exportBtn">⬇ Download Excel</button>
+      <span class="pillnote" id="exportStatus"></span>
+    </div>
+  </div>
+
+  <div class="proto-note">Verify every entry before using in a real return. Statement images are sent only to Anthropic's API for extraction and are not stored by this app.</div>
+</div>
+
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal">
+    <h3>Anthropic API Key</h3>
+    <p>Needed to read statements. Get one at <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>. Stored only in this browser (localStorage) — never sent anywhere but Anthropic's API.</p>
+    <input type="password" id="apiKeyInput" placeholder="sk-ant-..." />
+    <div class="row">
+      <button class="primary" id="saveKeyBtn" style="flex:1">Save</button>
+      <button class="ghost" id="closeSettingsBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATEGORIES = [
+  "Income", "Rent - Business premises", "Wages- Employees", "Contractors", "Superannuation",
+  "Equipment Leases", "Bank Interest charges", "Bank Fees", "Capital assets & equipment",
+  "Printing & Stationery", "Phone", "Repairs & Maintenance", "MV Fuel", "MV Repairs",
+  "MV Insurance", "Licence", "Registration", "MV Lease", "Advertising / Marketing",
+  "Tax Payments", "Uncategorised"
+];
+const MODEL = "claude-sonnet-5";
+
+let rows = [];
+let rowSeq = 1;
+
+// ---- Settings / API key ----
+const settingsModal = document.getElementById('settingsModal');
+const apiKeyInput = document.getElementById('apiKeyInput');
+document.getElementById('settingsBtn').addEventListener('click', () => {
+  apiKeyInput.value = localStorage.getItem('anthropic_api_key') || '';
+  settingsModal.classList.add('open');
+});
+document.getElementById('closeSettingsBtn').addEventListener('click', () => settingsModal.classList.remove('open'));
+document.getElementById('saveKeyBtn').addEventListener('click', () => {
+  localStorage.setItem('anthropic_api_key', apiKeyInput.value.trim());
+  settingsModal.classList.remove('open');
+});
+function getApiKey() { return localStorage.getItem('anthropic_api_key') || ''; }
+
+// ---- Step 1 ----
+const gateBoxes = document.querySelectorAll('.gate');
+const continueBtn = document.getElementById('continueBtn');
+const step1 = document.getElementById('step1');
+const step2 = document.getElementById('step2');
+function checkGate() { continueBtn.disabled = !Array.from(gateBoxes).every(b => b.checked); }
+gateBoxes.forEach(b => b.addEventListener('change', checkGate));
+continueBtn.addEventListener('click', () => {
+  step1.style.opacity = '.6';
+  continueBtn.textContent = 'Confirmed ✓';
+  step2.classList.remove('disabled-note');
+});
+
+// ---- Step 2 ----
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const browseBtn = document.getElementById('browseBtn');
+const timelineBox = document.getElementById('timelineBox');
+const timelineEl = document.getElementById('timeline');
+const errorBox = document.getElementById('errorBox');
+const step3 = document.getElementById('step3');
+const step4 = document.getElementById('step4');
+const rowsBody = document.getElementById('rowsBody');
+const countPill = document.getElementById('countPill');
+
+const STEPS = ['Document uploaded', 'Text detected', 'Transactions extracted', 'Categorisation in progress', 'Human review'];
+function renderTimeline(activeIdx, subtext) {
+  timelineBox.style.display = 'block';
+  timelineEl.innerHTML = STEPS.map((label, i) => {
+    const state = i < activeIdx ? 'done' : (i === activeIdx ? 'active' : 'pending');
+    const icon = state === 'done' ? '✓' : (i + 1);
+    const sub = (state === 'active' && subtext) ? `<div class="tl-sub">${subtext}</div>` : '';
+    return `<div class="tl-item"><div class="tl-dot ${state}">${icon}</div><div class="tl-label ${state}">${label}</div></div>${sub}`;
+  }).join('');
+}
+
+browseBtn.addEventListener('click', (e) => { e.stopPropagation(); if (!continueBtn.disabled) fileInput.click(); });
+dropzone.addEventListener('click', () => { if (!continueBtn.disabled) fileInput.click(); });
+['dragover','dragenter'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); if (!continueBtn.disabled) dropzone.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => { if (continueBtn.disabled) return; const f = e.dataTransfer.files?.[0]; if (f) handleFile(f); });
+fileInput.addEventListener('change', e => { const f = e.target.files?.[0]; if (f) handleFile(f); });
+
+const MAX_PDF_PAGES = 20;
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+function canvasToBlob(canvas) { return new Promise(resolve => canvas.toBlob(resolve, 'image/png')); }
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(',')[1]);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+async function pdfToPageBlobs(file, onProgress) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const total = Math.min(pdf.numPages, MAX_PDF_PAGES);
+  const blobs = [];
+  for (let i = 1; i <= total; i++) {
+    onProgress?.(i, total);
+    const page = await pdf.getPage(i);
+    const targetWidth = 1400;
+    const baseViewport = page.getViewport({ scale: 1 });
+    const scale = targetWidth / baseViewport.width;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    blobs.push(await canvasToBlob(canvas));
+  }
+  return { blobs, truncated: pdf.numPages > MAX_PDF_PAGES, totalPages: pdf.numPages };
+}
+
+function buildExtractionPrompt() {
+  const catList = CATEGORIES.filter(c => c !== 'Income' && c !== 'Uncategorised').join(', ');
+  return `This image is one page of a business bank statement (client identifying details have already been redacted by the user).
+Extract every transaction line you can read. For each one return:
+- date (as shown, e.g. "26/04/21")
+- description (the transaction description text)
+- amount (number, no currency symbol)
+- type: "debit" or "credit"
+- category: for a debit, pick the single best match from this exact list: [${catList}]. If nothing fits well, use "Uncategorised". For a credit (money in), use "Income".
+- confidence: your confidence in the category assignment, an integer 0-100.
+
+If this page has no transaction rows, reply with an empty JSON array.
+Reply with ONLY a JSON array, one object per transaction, no other text. Example:
+[{"date":"26/04/21","description":"Bunnings 462000","amount":230.33,"type":"debit","category":"Capital assets & equipment","confidence":92}]`;
+}
+
+function extractJson(text) {
+  try { return JSON.parse(text); } catch (e) {}
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) { try { return JSON.parse(fence[1]); } catch (e) {} }
+  const start = Math.min(...['[','{'].map(c => { const i = text.indexOf(c); return i === -1 ? Infinity : i; }));
+  const endBracket = text.lastIndexOf(']');
+  const endBrace = text.lastIndexOf('}');
+  const end = Math.max(endBracket, endBrace);
+  if (isFinite(start) && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)); } catch (e) {}
+  }
+  throw new Error('invalid_json');
+}
+
+async function callClaudeVision(apiKey, blob, prompt) {
+  const base64 = await blobToBase64(blob);
+  const mediaType = blob.type || 'image/png';
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 4096,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+          { type: 'text', text: prompt },
+        ],
+      }],
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    const err = new Error('api_error');
+    err.status = res.status; err.body = body;
+    throw err;
+  }
+  const data = await res.json();
+  const text = (data.content || []).map(b => b.type === 'text' ? b.text : '').join('');
+  return extractJson(text);
+}
+
+async function extractFromImageBlob(apiKey, blob) {
+  const data = await callClaudeVision(apiKey, blob, buildExtractionPrompt());
+  if (!Array.isArray(data)) throw new Error('empty_completion');
+  return data.map(t => ({
+    id: rowSeq++,
+    date: String(t.date ?? ''),
+    description: String(t.description ?? ''),
+    amount: Number(t.amount) || 0,
+    type: t.type === 'credit' ? 'credit' : 'debit',
+    category: CATEGORIES.includes(t.category) ? t.category : 'Uncategorised',
+    confidence: Math.max(0, Math.min(100, Number(t.confidence) || 70)),
+  }));
+}
+
+async function handleFile(file) {
+  errorBox.innerHTML = '';
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    errorBox.innerHTML = '<div class="error">Add your Anthropic API key in ⚙ Settings first.</div>';
+    settingsModal.classList.add('open');
+    return;
+  }
+
+  renderTimeline(0, 'Uploading file…');
+  const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
+
+  try {
+    renderTimeline(1, 'Reading document…');
+    let pageBlobs = [];
+    let pdfNote = '';
+    if (isPdf) {
+      const { blobs, truncated, totalPages } = await pdfToPageBlobs(file, (i, total) => {
+        renderTimeline(1, `Rendering page ${i} of ${total}…`);
+      });
+      pageBlobs = blobs;
+      if (truncated) pdfNote = `Only processed the first ${MAX_PDF_PAGES} of ${totalPages} pages.`;
+    } else {
+      pageBlobs = [file];
+    }
+
+    renderTimeline(2, 'Extracting transaction lines…');
+    const allRows = [];
+    for (let i = 0; i < pageBlobs.length; i++) {
+      renderTimeline(3, pageBlobs.length > 1 ? `Categorising — page ${i + 1} of ${pageBlobs.length}…` : 'Categorising transactions…');
+      const pageRows = await extractFromImageBlob(apiKey, pageBlobs[i]);
+      allRows.push(...pageRows);
+    }
+    if (allRows.length === 0) throw new Error('empty_completion');
+
+    rows = allRows;
+    renderTimeline(4, null);
+    renderRows();
+    if (pdfNote) errorBox.innerHTML = `<div class="hint">${pdfNote}</div>`;
+    step3.style.display = 'block';
+    step4.style.display = 'block';
+    updateExportSummary();
+  } catch (e) {
+    timelineBox.style.display = 'none';
+    let msg = 'Something went wrong reading this file. Try a clearer scan/photo, or a different PDF.';
+    if (e.status === 401) msg = 'API key was rejected — check it in Settings.';
+    else if (e.status === 429) msg = 'Rate limited — wait a moment and try again.';
+    else if (e.message === 'empty_completion' || e.message === 'invalid_json') msg = 'Couldn\'t read clear transaction data from this file — try a sharper scan.';
+    errorBox.innerHTML = `<div class="error">${msg}</div>`;
+  }
+}
+
+// ---- Step 3 ----
+function confPill(c) {
+  const cls = c >= 90 ? 'hi' : (c >= 70 ? 'mid' : 'lo');
+  return `<span class="pill ${cls}">${c}%</span>`;
+}
+function renderRows() {
+  rowsBody.innerHTML = '';
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.dataset.id = r.id;
+    tr.innerHTML = `
+      <td><input type="text" value="${escapeAttr(r.date)}" data-f="date" style="width:80px"></td>
+      <td><input type="text" value="${escapeAttr(r.description)}" data-f="description" style="min-width:220px"></td>
+      <td><input type="number" step="0.01" value="${r.amount}" data-f="amount" style="width:90px" class="${r.type==='debit'?'amt-debit':'amt-credit'}"></td>
+      <td><select data-f="type"><option value="debit" ${r.type==='debit'?'selected':''}>Debit</option><option value="credit" ${r.type==='credit'?'selected':''}>Credit</option></select></td>
+      <td><select data-f="category">${CATEGORIES.map(c => `<option value="${c}" ${c===r.category?'selected':''}>${c}</option>`).join('')}</select></td>
+      <td>${confPill(r.confidence)}</td>
+      <td class="row-actions"><button class="ghost small" data-act="del">Remove</button></td>
+    `;
+    rowsBody.appendChild(tr);
+  });
+  countPill.textContent = `${rows.length} transaction${rows.length===1?'':'s'} extracted — review before exporting`;
+  updateExportSummary();
+}
+rowsBody.addEventListener('input', e => {
+  const tr = e.target.closest('tr'); if (!tr) return;
+  const row = rows.find(r => r.id === Number(tr.dataset.id)); if (!row) return;
+  const f = e.target.dataset.f; if (!f) return;
+  row[f] = f === 'amount' ? Number(e.target.value) || 0 : e.target.value;
+});
+rowsBody.addEventListener('change', e => {
+  const tr = e.target.closest('tr'); const row = rows.find(r => r.id === Number(tr.dataset.id)); if (!row) return;
+  if (e.target.dataset.f === 'type') {
+    const amtInput = tr.querySelector('[data-f="amount"]');
+    amtInput.classList.toggle('amt-debit', e.target.value === 'debit');
+    amtInput.classList.toggle('amt-credit', e.target.value === 'credit');
+  }
+  if (e.target.dataset.f === 'category') updateExportSummary();
+});
+rowsBody.addEventListener('click', e => {
+  if (e.target.dataset.act === 'del') { rows = rows.filter(r => r.id !== Number(e.target.closest('tr').dataset.id)); renderRows(); }
+});
+document.getElementById('addRowBtn').addEventListener('click', () => {
+  rows.push({ id: rowSeq++, date: '', description: '', amount: 0, type: 'debit', category: 'Uncategorised', confidence: 100 });
+  renderRows();
+});
+
+// ---- Step 4 ----
+function updateExportSummary() {
+  document.getElementById('sumTotal').textContent = rows.length;
+  document.getElementById('sumConfirmed').textContent = rows.length;
+  document.getElementById('sumUncat').textContent = rows.filter(r => r.category === 'Uncategorised').length;
+}
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const exportStatus = document.getElementById('exportStatus');
+  if (rows.length === 0) { exportStatus.textContent = 'No rows to export.'; return; }
+
+  const includeGst = document.getElementById('optGst').checked;
+  const includeStatus = document.getElementById('optStatus').checked;
+  const expenseCats = CATEGORIES.filter(c => c !== 'Income' && c !== 'Uncategorised');
+  const header = ['Date', 'Transaction', 'Source 1', 'Source 2', '', ...expenseCats, 'Uncategorised'];
+  if (includeGst) header.push('GST');
+  if (includeStatus) header.push('Review Status');
+
+  const dataRows = rows.map(r => {
+    const row = new Array(header.length).fill('');
+    row[0] = r.date; row[1] = r.description;
+    if (r.type === 'credit' || r.category === 'Income') { row[2] = r.description; }
+    else {
+      const idx = header.indexOf(r.category);
+      if (idx >= 0) row[idx] = r.amount; else row[header.indexOf('Uncategorised')] = r.amount;
+    }
+    if (includeGst) row[header.indexOf('GST')] = (r.category !== 'Income') ? Math.round((r.amount / 11) * 100) / 100 : '';
+    if (includeStatus) row[header.indexOf('Review Status')] = 'Confirmed';
+    return row;
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
+  ws['!cols'] = header.map((_, i) => ({ wch: i === 1 ? 28 : 14 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'taxflow_transactions.xlsx';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  exportStatus.textContent = 'Saved ✓';
+});
+
+function escapeAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+</script>
+</body>
+</html>
